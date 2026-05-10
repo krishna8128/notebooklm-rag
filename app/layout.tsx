@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "NotebookLM RAG",
+  title: "NotebookLM RAG — chat with your documents",
   description:
-    "Upload a document and chat with it. RAG-powered question answering grounded in your file.",
+    "A retrieval-augmented document assistant. Upload a PDF or text file, ask grounded questions, and get cited answers — never hallucinated.",
 };
 
 export default function RootLayout({
@@ -14,7 +14,13 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <head>
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap"
+        />
+      </head>
+      <body className="app-bg">{children}</body>
     </html>
   );
 }
