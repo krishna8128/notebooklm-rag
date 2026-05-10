@@ -1,5 +1,8 @@
 # NotebookLM RAG
 
+**Live demo:** <https://notebooklm-rag-ochre.vercel.app>
+**Repo:** <https://github.com/krishna8128/notebooklm-rag>
+
 A minimal Google NotebookLM clone. Upload a PDF or text file, and chat with it.
 Answers are grounded strictly in the document via a full RAG pipeline:
 
