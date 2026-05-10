@@ -1,0 +1,15 @@
+node_modules
+.next
+out
+dist
+
+# env
+.env
+.env.local
+.env.*.local
+
+# misc
+.DS_Store
+*.log
+.vercel
+.turbo

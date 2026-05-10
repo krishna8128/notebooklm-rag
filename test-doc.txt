@@ -1,0 +1,24 @@
+PROJECT ZEPHYR — INTERNAL ENGINEERING NOTES
+
+1. Codename and history
+Project Zephyr was started on 12 March 2024 by the Bangalore platform team. The original codename was "Pinwheel"; it was renamed to Zephyr after the v0.2 milestone because the team wanted a name that reflected the system's lightweight, low-latency goals.
+
+2. Architecture overview
+Zephyr is a write-optimized columnar storage engine. It uses a custom log-structured merge tree variant called LSM-Z, which keeps level 0 entirely in memory and flushes to a tiered set of immutable segment files on disk. The primary tunable is the L0 memtable size, which defaults to 64 MiB.
+
+3. Compaction policy
+Compaction is triggered when L1 exceeds 8 segment files OR when the total bytes on disk exceed 4 GiB. The compaction worker runs in a dedicated thread pool of 2 workers. Compaction prioritises segments containing the highest fraction of tombstoned rows.
+
+4. Public API surface
+- put(key, value)
+- get(key) -> value | null
+- range(start_key, end_key, limit=1000)
+- snapshot() -> SnapshotHandle
+
+The range() function returns rows in lexicographic order by key. Limits above 10000 are silently clamped to 10000 to protect the server.
+
+5. Performance targets
+Single-node Zephyr is expected to sustain 80,000 writes/second on a 16-core box at p99 latency under 5 ms. Read-heavy workloads of 250,000 reads/sec at p99 under 2 ms are achievable when the working set fits in the page cache.
+
+6. Known limitations
+Zephyr does not currently support secondary indexes. There is no built-in replication; high-availability deployments must front Zephyr with the Stratus replication layer. The minimum supported kernel is Linux 5.10.
