@@ -101,13 +101,32 @@ export async function indexDocument(
   return { collectionName, chunkCount: docs.length };
 }
 
-export async function retrieve(documentId: string, query: string) {
+export async function retrieve(
+  documentId: string,
+  query: string,
+  k: number = TOP_K
+) {
   const embeddings = getEmbeddings();
   const store = await QdrantVectorStore.fromExistingCollection(embeddings, {
     ...qdrantClientArgs(),
     collectionName: collectionFor(documentId),
   });
-  return store.similaritySearch(query, TOP_K);
+  return store.similaritySearch(query, k);
+}
+
+export function dedupeChunks(chunkArrays: Document[][]): Document[] {
+  const seen = new Set<string>();
+  const out: Document[] = [];
+  for (const arr of chunkArrays) {
+    for (const c of arr) {
+      const key = (c.pageContent || "").slice(0, 160);
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push(c);
+      }
+    }
+  }
+  return out;
 }
 
 export async function answerWithContext(

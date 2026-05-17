@@ -11,10 +11,20 @@ type Source = {
   preview: string;
 };
 
+type RagMeta = {
+  originalQuery: string;
+  rewrittenQuery: string;
+  variants: string[];
+  retrieved: number;
+  kept: number;
+  dropped: number;
+};
+
 type Message = {
   role: "user" | "assistant";
   content: string;
   sources?: Source[];
+  rag?: RagMeta;
 };
 
 type DocumentInfo = {
@@ -95,7 +105,12 @@ export default function Home() {
       if (!res.ok) throw new Error(data.error ?? "Chat failed");
       setMessages((m) => [
         ...m,
-        { role: "assistant", content: data.answer, sources: data.sources },
+        {
+          role: "assistant",
+          content: data.answer,
+          sources: data.sources,
+          rag: data.rag,
+        },
       ]);
     } catch (err) {
       setMessages((m) => [
@@ -319,6 +334,9 @@ export default function Home() {
                           <ReactMarkdown>{m.content}</ReactMarkdown>
                         )}
                       </div>
+                      {m.role === "assistant" && m.rag && (
+                        <RagBadges rag={m.rag} />
+                      )}
                       {m.sources && m.sources.length > 0 && (
                         <details className="text-xs">
                           <summary className="cursor-pointer text-violet hover:text-violet/80 select-none">
@@ -409,9 +427,43 @@ export default function Home() {
         )}
 
         <footer className="text-center text-xs text-mute mt-10 pb-4">
-          Built with Next.js · LangChain · OpenAI · Qdrant
+          Built with Next.js · LangChain · OpenAI · Qdrant · CRAG
         </footer>
       </div>
     </main>
+  );
+}
+
+function RagBadges({ rag }: { rag: RagMeta }) {
+  const rewritten =
+    rag.rewrittenQuery &&
+    rag.originalQuery &&
+    rag.rewrittenQuery.trim().toLowerCase() !==
+      rag.originalQuery.trim().toLowerCase();
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+      {rewritten && (
+        <span
+          className="rounded-full bg-violet/15 border border-violet/30 text-violet px-2.5 py-0.5"
+          title={`Original: ${rag.originalQuery}`}
+        >
+          rewritten → &ldquo;{rag.rewrittenQuery}&rdquo;
+        </span>
+      )}
+      {rag.variants?.length > 0 && (
+        <span
+          className="rounded-full bg-surface border border-line text-mute px-2.5 py-0.5"
+          title={rag.variants.join(" · ")}
+        >
+          +{rag.variants.length} query variants
+        </span>
+      )}
+      {typeof rag.retrieved === "number" && (
+        <span className="rounded-full bg-cyan/15 border border-cyan/30 text-cyan px-2.5 py-0.5">
+          judge kept {rag.kept}/{rag.retrieved} chunks
+        </span>
+      )}
+    </div>
   );
 }

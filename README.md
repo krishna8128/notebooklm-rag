@@ -3,11 +3,14 @@
 **Live demo:** <https://notebooklm-rag-ochre.vercel.app>
 **Repo:** <https://github.com/krishna8128/notebooklm-rag>
 
-A minimal Google NotebookLM clone. Upload a PDF or text file, and chat with it.
-Answers are grounded strictly in the document via a full RAG pipeline:
+A minimal Google NotebookLM clone with **Corrective RAG (CRAG)**. Upload a PDF
+or text file, chat with it, and get answers that are grounded strictly in the
+document.
 
 ```
-upload → extract → chunk → embed → store → retrieve → generate
+upload → extract → chunk → embed → store
+                                      ↓
+query → rewrite → multi-query retrieve → dedupe → judge → generate
 ```
 
 Built with **Next.js 16 (App Router)**, **LangChain**, **OpenAI** (embeddings +
@@ -23,8 +26,30 @@ chat), and **Qdrant** (vector store).
 | Chunking   | `RecursiveCharacterTextSplitter` — `chunkSize=1000`, `chunkOverlap=150`        |
 | Embedding  | OpenAI `text-embedding-3-small` (1536 dims)                                    |
 | Storage    | Qdrant — one collection per uploaded document (`doc_<id>`) for isolation       |
-| Retrieval  | Cosine similarity search, top-`k=4`                                            |
+| Retrieval  | Multi-query (cleaned + 2 variants) · cosine similarity · top-`k=6` each        |
+| Correction | Dedupe by content prefix · LLM-as-judge drops `irrelevant` chunks              |
 | Generation | OpenAI `gpt-4o-mini`, low temperature, system prompt enforces context-only use |
+
+### Corrective RAG (CRAG)
+
+The retrieval path doesn't just trust the user's query and the vector store:
+
+1. **Query rewriter** — `gpt-4o-mini` cleans typos / abbreviations and
+   produces two paraphrase variants that may use vocabulary closer to the
+   document's wording. Implemented in [`lib/queryRewriter.ts`](lib/queryRewriter.ts).
+2. **Multi-query retrieval** — we retrieve `k=6` chunks for *each* query
+   (cleaned + variants) in parallel, then dedupe across them.
+3. **LLM-as-judge** — `gpt-4o-mini` grades every surviving chunk as
+   `relevant` / `ambiguous` / `irrelevant`. Irrelevant chunks are dropped
+   before generation. Implemented in [`lib/judge.ts`](lib/judge.ts).
+4. **Corrective fallback** — if every chunk was judged irrelevant, the API
+   returns `"I couldn't find that in the document."` instead of asking the LLM
+   to hallucinate.
+5. **Capped generation** — at most 8 chunks reach the generator, keeping the
+   prompt tight even when retrieval is generous.
+
+The UI surfaces small badges under each answer: rewritten query, variant count,
+and `kept / total` from the judge — making the CRAG pipeline visible.
 
 ### Chunking strategy — why `RecursiveCharacterTextSplitter`?
 

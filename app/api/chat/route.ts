@@ -1,8 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
-import { answerWithContext, retrieve } from "@/lib/rag";
+import { answerWithContext, dedupeChunks, retrieve } from "@/lib/rag";
+import { rewriteQuery } from "@/lib/queryRewriter";
+import { gradeChunks, type Grade } from "@/lib/judge";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
+
+const PER_QUERY_K = 6;
+const MAX_CONTEXT_CHUNKS = 8;
+
+export type RagMeta = {
+  originalQuery: string;
+  rewrittenQuery: string;
+  variants: string[];
+  retrieved: number;
+  kept: number;
+  dropped: number;
+  grades: { index: number; grade: Grade }[];
+};
 
 export async function POST(req: NextRequest) {
   try {
@@ -31,19 +46,46 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing query." }, { status: 400 });
     }
 
-    const chunks = await retrieve(documentId, query);
+    // Step 1: Query rewriting — fix typos / produce paraphrase variants
+    const { cleaned, variants } = await rewriteQuery(query);
+    const queries = [cleaned, ...variants];
 
-    if (chunks.length === 0) {
+    // Step 2: Multi-query retrieval in parallel
+    const chunkArrays = await Promise.all(
+      queries.map((q) => retrieve(documentId, q, PER_QUERY_K))
+    );
+
+    // Step 3: Dedupe across variants
+    const allChunks = dedupeChunks(chunkArrays);
+
+    // Step 4: LLM-as-judge — grade chunks, drop irrelevant
+    const { kept, dropped, grades } = await gradeChunks(cleaned, allChunks);
+
+    const rag: RagMeta = {
+      originalQuery: query,
+      rewrittenQuery: cleaned,
+      variants,
+      retrieved: allChunks.length,
+      kept: kept.length,
+      dropped: dropped.length,
+      grades,
+    };
+
+    // Step 5: Corrective fallback — if nothing survives, refuse early
+    if (kept.length === 0) {
       return NextResponse.json({
         answer:
-          "I couldn't find anything in the indexed document for that question.",
+          "I couldn't find that in the document. Try rephrasing or asking about a topic the document actually covers.",
         sources: [],
+        rag,
       });
     }
 
-    const answer = await answerWithContext(query, chunks);
+    // Step 6: Cap context and generate the grounded answer
+    const contextChunks = kept.slice(0, MAX_CONTEXT_CHUNKS);
+    const answer = await answerWithContext(cleaned, contextChunks);
 
-    const sources = chunks.map((c, i) => {
+    const sources = contextChunks.map((c, i) => {
       const meta = c.metadata as {
         source?: string;
         loc?: { pageNumber?: number };
@@ -61,7 +103,7 @@ export async function POST(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({ answer, sources });
+    return NextResponse.json({ answer, sources, rag });
   } catch (err) {
     console.error("[chat]", err);
     const message = err instanceof Error ? err.message : "Chat failed.";
